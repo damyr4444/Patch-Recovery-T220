@@ -29,46 +29,46 @@ jobs:
           exit 1
         fi
 
-    - name: Patch Process
+  - name: Patch Process
       run: |
-        # 1. Give everything execution permission
+        # 1. Ensure all binaries are executable
         chmod a+x script1.sh script2.sh magiskboot avbtool
 
-        # 2. FORCE FIX: Replace any hardcoded absolute paths with the local directory
-        # This looks for the old path in script2.sh and replaces it with the actual current path
-        sed -i 's|/home/runner/work/[^/ ]*/[^/ ]*/|./|g' script2.sh
-        
-        # 3. Verify the fix (optional, helps debugging)
-        echo "Checking line 8 of script2.sh for fix:"
+        # 2. STRIP HARDCODED PATHS: Replace the broken absolute path with a relative one
+        # This fixes every line from 8 to 26 automatically
+        sed -i 's|/home/runner/work/[^ ]*/magiskboot|./magiskboot|g' script2.sh
+
+        # 3. Verify the fix for logging purposes
+        echo "Verifying script2.sh path fix (showing line 8):"
         sed -n '8p' script2.sh
 
-        # 4. Run the patching logic
+        # 4. Run scripts
         ./script1.sh
         ./script2.sh
         
-        # 5. Check if the image was actually created
-        if [ ! -f "new-boot.img" ] && [ ! -f "recovery-patched.img" ]; then
-          echo "ERROR: Patching failed! magiskboot likely did not run."
+        # 5. Handle the output image
+        # script2 usually generates 'new-boot.img'
+        if [ -f "new-boot.img" ]; then
+          mv new-boot.img recovery-patched.img
+        fi
+
+        if [ ! -f "recovery-patched.img" ]; then
+          echo "ERROR: recovery-patched.img was not created!"
           exit 1
         fi
 
         # 6. AVB Signing
         python3 avbtool extract_public_key --key phh.pem --output phh.pub.bin
-        
-        # Use recovery-patched.img if script2 created it, otherwise use new-boot.img
-        SOURCE_IMG="new-boot.img"
-        if [ -f "recovery-patched.img" ]; then SOURCE_IMG="recovery-patched.img"; fi
-        
         python3 avbtool add_hash_footer \
           --partition_name recovery \
           --partition_size $(stat -c%s recovery.img) \
-          --image "$SOURCE_IMG" \
+          --image recovery-patched.img \
           --key phh.pem \
           --algorithm SHA256_RSA4096
         
         # 7. Package for Odin
         mkdir -p output
-        cp "$SOURCE_IMG" output/recovery.img
+        cp recovery-patched.img output/recovery.img
         cd output
         tar -H ustar -c recovery.img > fastbootd-recovery.tar
         md5sum -b fastbootd-recovery.tar | cut -d ' ' -f 1 >> fastbootd-recovery.tar
