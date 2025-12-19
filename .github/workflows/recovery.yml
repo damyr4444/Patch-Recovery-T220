@@ -28,30 +28,30 @@ jobs:
             exit 1
           fi
 
-      - name: Patch Process
+      - name: Patch process
         run: |
           # 1. Ensure all binaries are executable
           chmod a+x script1.sh script2.sh magiskboot avbtool
 
-          # 2. AGGRESSIVE PATH FIX: 
-          # Replaces any long hardcoded path in script2.sh with local ./magiskboot
-          sed -i 's|/.*/magiskboot|./magiskboot|g' script2.sh
-
-          # 3. Verify the fix in the log
-          echo "Verified script2.sh line 8:"
+          # 2. SPECIFIC PATH FIX:
+          # This replaces the hardcoded path specifically with the current folder variable
+          sed -i "s|/home/runner/work/Patch-Recovery/Patch-Recovery/|$GITHUB_WORKSPACE/|g" script2.sh
+          
+          # 3. Verify the change in logs
+          echo "Verified script2.sh line 8 (should show your current workspace path):"
           sed -n '8p' script2.sh
 
           # 4. Run scripts
           ./script1.sh || echo "Script 1 had warnings"
           ./script2.sh || echo "Script 2 had warnings"
           
-          # 5. Handle output (check both possible names)
+          # 5. Handle output
           if [ -f "new-boot.img" ]; then
             mv new-boot.img recovery-patched.img
           elif [ -f "recovery-patched.img" ]; then
             echo "Found recovery-patched.img"
           else
-            echo "ERROR: No patched image found!"
+            echo "ERROR: No patched image found! Check script2 output above."
             exit 1
           fi
 
@@ -71,7 +71,6 @@ jobs:
           tar -H ustar -c recovery.img > fastbootd-recovery.tar
           md5sum -b fastbootd-recovery.tar | cut -d ' ' -f 1 >> fastbootd-recovery.tar
           mv fastbootd-recovery.tar fastbootd-recovery.tar.md5
-
       - name: Upload Recovery
         uses: actions/upload-artifact@v4
         with:
