@@ -31,39 +31,48 @@ jobs:
 
     - name: Patch Process
       run: |
-        # 1. Ensure permissions are set correctly
-        chmod +x script1.sh script2.sh magiskboot avbtool
+        # 1. Give everything execution permission
+        chmod a+x script1.sh script2.sh magiskboot avbtool
 
-        # 2. Fix the hardcoded paths in script2.sh 
-        # This replaces the old repo name with the current working directory dynamically
-        sed -i "s|/home/runner/work/Patch-Recovery/Patch-Recovery/|$GITHUB_WORKSPACE/|g" script2.sh
-        sed -i "s|/home/runner/work/Patch-Recovery-T220/Patch-Recovery-T220/|$GITHUB_WORKSPACE/|g" script2.sh
+        # 2. FORCE FIX: Replace any hardcoded absolute paths with the local directory
+        # This looks for the old path in script2.sh and replaces it with the actual current path
+        sed -i 's|/home/runner/work/[^/ ]*/[^/ ]*/|./|g' script2.sh
+        
+        # 3. Verify the fix (optional, helps debugging)
+        echo "Checking line 8 of script2.sh for fix:"
+        sed -n '8p' script2.sh
 
-        # 3. Run the scripts
+        # 4. Run the patching logic
         ./script1.sh
         ./script2.sh
         
-        # 4. Sign the image (Ensuring the file exists before signing)
-        if [ ! -f "recovery-patched.img" ]; then
-          echo "ERROR: recovery-patched.img was not created by the scripts!"
+        # 5. Check if the image was actually created
+        if [ ! -f "new-boot.img" ] && [ ! -f "recovery-patched.img" ]; then
+          echo "ERROR: Patching failed! magiskboot likely did not run."
           exit 1
         fi
 
+        # 6. AVB Signing
         python3 avbtool extract_public_key --key phh.pem --output phh.pub.bin
-        python3 avbtool add_hash_footer --partition_name recovery \
+        
+        # Use recovery-patched.img if script2 created it, otherwise use new-boot.img
+        SOURCE_IMG="new-boot.img"
+        if [ -f "recovery-patched.img" ]; then SOURCE_IMG="recovery-patched.img"; fi
+        
+        python3 avbtool add_hash_footer \
+          --partition_name recovery \
           --partition_size $(stat -c%s recovery.img) \
-          --image recovery-patched.img \
+          --image "$SOURCE_IMG" \
           --key phh.pem \
           --algorithm SHA256_RSA4096
         
-        # 5. Create Odin-flashable tar.md5
+        # 7. Package for Odin
         mkdir -p output
-        cp recovery-patched.img output/recovery.img
+        cp "$SOURCE_IMG" output/recovery.img
         cd output
         tar -H ustar -c recovery.img > fastbootd-recovery.tar
         md5sum -b fastbootd-recovery.tar | cut -d ' ' -f 1 >> fastbootd-recovery.tar
         mv fastbootd-recovery.tar fastbootd-recovery.tar.md5
-
     - name: Upload Recovery
       uses: actions/upload-artifact@v4
       with:
